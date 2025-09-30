@@ -22,12 +22,13 @@ type RedisStorage struct {
 	config RedisConfig
 	client *redis.Client
 	ctx *context.Context
+	prefix string
 }
 
 // creates new instance of redis store
 func NewRedisStorage(options RedisConfig) (postgres *RedisStorage, err error) {
 	ctx := context.Background()
-	redisStore := RedisStorage{config: options, ctx: &ctx}
+	redisStore := RedisStorage{config: options, ctx: &ctx, prefix: "schduler"}
 	if err := redisStore.connect(); err != nil {
 		log.Fatalf("Error connecting to Redis", err)
 		return nil, err
@@ -84,7 +85,7 @@ func (redisStorage *RedisStorage) Fetch() ([]TaskAttributes, error) {
 		end
 		return result
 	`)
-	keys, errk := redisStorage.getKeysByPattern("*")		// TODO: name prefix option would be better
+	keys, errk := redisStorage.getKeysByPattern(fmt.Sprintf("%s*", redisStorage.prefix))		
 	if errk != nil {
 		log.Fatal("cannot get keys")
 	}
@@ -147,7 +148,7 @@ func( redisStorage *RedisStorage) insert(task TaskAttributes) (err error) {
 		log.Fatal(err)
 		return err
 	}
-	err = redisStorage.client.HMSet(*redisStorage.ctx, task.Hash, result).Err()
+	err = redisStorage.client.HMSet(*redisStorage.ctx, redisStorage.generateKey(task.Hash), result).Err()
 	if err != nil {
 		log.Fatal(err)
 		return err
@@ -175,3 +176,7 @@ func (redisStorage *RedisStorage) getKeysByPattern(pattern string) ([]string, er
 	return keys, nil
 }
 
+
+func ( redisStorage *RedisStorage )generateKey(hash string) string {
+	return fmt.Sprintf("%s-%s", redisStorage.prefix, hash)
+} 
