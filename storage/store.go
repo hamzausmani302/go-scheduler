@@ -4,13 +4,13 @@ package storage
 // All task data are converted from/to string to prevent the store from
 // worrying about details of converting data to the proper formats.
 type TaskAttributes struct {
-	Hash        string
-	Name        string
-	LastRun     string
-	NextRun     string
-	Duration    string
-	IsRecurring string
-	Params      string
+	Hash        string  `json:"hash"`
+	Name        string	`json:"name"`
+	LastRun     string	`json:"lastRun"`
+	NextRun     string	`json:"nextRun"`
+	Duration    string	`json:"duration"`
+	IsRecurring string	`json:"isRecurring"`
+	Params      string	`json:"params"`
 }
 
 // TaskStore is the interface to implement when adding custom task storage.
