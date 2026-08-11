@@ -11,43 +11,42 @@ import (
 )
 
 type RedisConfig struct {
-	Host string
-	Port int
+	Host     string
+	Port     int
 	Password string
-	Db int
-	ConnectionString string
+	Db       int
 }
 
 type RedisStorage struct {
 	config RedisConfig
 	client *redis.Client
-	ctx *context.Context
+	ctx    *context.Context
 	prefix string
 }
 
 // creates new instance of redis store
 func NewRedisStorage(options RedisConfig) (postgres *RedisStorage, err error) {
 	ctx := context.Background()
-	redisStore := RedisStorage{config: options, ctx: &ctx, prefix: "schduler"}
+	redisStore := RedisStorage{config: options, ctx: &ctx, prefix: "scheduler"}
 	if err := redisStore.connect(); err != nil {
-		log.Fatalf("Error connecting to Redis", err)
+		log.Fatalf("Error connecting to Redis: %v", err)
 		return nil, err
-	}	
+	}
 	return &redisStore, nil
 }
 
 // Connect creates a redis connection and store it in client field.
 func (redisStorage *RedisStorage) connect() (err error) {
 	redisStorage.client = redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", redisStorage.config.Host, redisStorage.config.Port),     // e.g. "localhost:6379"
-		Password: redisStorage.config.Password, // "" if no password
-		DB:       redisStorage.config.Db,       // 0 is default DB
+		Addr:     fmt.Sprintf("%s:%d", redisStorage.config.Host, redisStorage.config.Port), // e.g. "localhost:6379"
+		Password: redisStorage.config.Password,                                             // "" if no password
+		DB:       redisStorage.config.Db,                                                   // 0 is default DB
 	})
 	_, err1 := redisStorage.client.Ping(context.Background()).Result()
-    if err1 != nil {
+	if err1 != nil {
 		log.Fatal(err1)
 		return err1
-    }
+	}
 	return nil
 }
 
@@ -60,17 +59,14 @@ func (redisStorage *RedisStorage) Close() error {
 
 func (redisStorage *RedisStorage) Add(task TaskAttributes) error {
 	//check if not already exist otherwise insert
-	exists, err := redisStorage.client.Exists(*redisStorage.ctx, task.Hash).Result()
+	exists, err := redisStorage.client.Exists(*redisStorage.ctx, redisStorage.generateKey(task.Hash)).Result()
 	if err != nil {
-		log.Fatal("Error reading data from redis")
-		return err
+		return fmt.Errorf("error reading data from redis: %w", err)
 	}
-	if exists  <= 0{
-		// key exists
-		log.Print("Inseting task")
-		if errk := redisStorage.insert(task); errk != nil {
-			log.Fatal(errk)
-			return errk
+	if exists <= 0 {
+		// key does not exist yet, insert it
+		if err := redisStorage.insert(task); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -85,7 +81,7 @@ func (redisStorage *RedisStorage) Fetch() ([]TaskAttributes, error) {
 		end
 		return result
 	`)
-	keys, errk := redisStorage.getKeysByPattern(fmt.Sprintf("%s*", redisStorage.prefix))		
+	keys, errk := redisStorage.getKeysByPattern(fmt.Sprintf("%s*", redisStorage.prefix))
 	if errk != nil {
 		log.Fatal("cannot get keys")
 	}
@@ -112,15 +108,15 @@ func (redisStorage *RedisStorage) Fetch() ([]TaskAttributes, error) {
 			value, _ := arr[i+1].(string)
 			m[field] = value
 		}
-		
+
 		task := TaskAttributes{
-			Hash: m["hash"],
-			Name: m["name"],
-			LastRun: m["lastrun"],
-			NextRun: m["nextrun"],
-			Duration: m["duration"],
+			Hash:        m["hash"],
+			Name:        m["name"],
+			LastRun:     m["lastrun"],
+			NextRun:     m["nextrun"],
+			Duration:    m["duration"],
 			IsRecurring: m["isrecurring"],
-			Params: m["params"],
+			Params:      m["params"],
 		}
 
 		tasks = append(tasks, task)
@@ -130,32 +126,20 @@ func (redisStorage *RedisStorage) Fetch() ([]TaskAttributes, error) {
 }
 
 func (redisStorage *RedisStorage) Remove(task TaskAttributes) error {
-	err := redisStorage.client.Del(*redisStorage.ctx, task.Hash).Err()
-	if err != nil {
-		panic(err)
-	}
-	return nil
+	return redisStorage.client.Del(*redisStorage.ctx, redisStorage.generateKey(task.Hash)).Err()
 }
 
-func( redisStorage *RedisStorage) insert(task TaskAttributes) (err error) {
+func (redisStorage *RedisStorage) insert(task TaskAttributes) (err error) {
 	bytesData, marshallErr := yaml.Marshal(task)
 	if marshallErr != nil {
-		log.Fatal(marshallErr)
 		return marshallErr
 	}
-	result := map[string]string{};
-	if err := yaml.Unmarshal(bytesData, result);err != nil {
-		log.Fatal(err)
+	result := map[string]string{}
+	if err := yaml.Unmarshal(bytesData, result); err != nil {
 		return err
 	}
-	err = redisStorage.client.HMSet(*redisStorage.ctx, redisStorage.generateKey(task.Hash), result).Err()
-	if err != nil {
-		log.Fatal(err)
-		return err
-	}
-	return err
+	return redisStorage.client.HMSet(*redisStorage.ctx, redisStorage.generateKey(task.Hash), result).Err()
 }
-
 
 func (redisStorage *RedisStorage) getKeysByPattern(pattern string) ([]string, error) {
 	var (
@@ -176,7 +160,6 @@ func (redisStorage *RedisStorage) getKeysByPattern(pattern string) ([]string, er
 	return keys, nil
 }
 
-
-func ( redisStorage *RedisStorage )generateKey(hash string) string {
+func (redisStorage *RedisStorage) generateKey(hash string) string {
 	return fmt.Sprintf("%s-%s", redisStorage.prefix, hash)
-} 
+}
